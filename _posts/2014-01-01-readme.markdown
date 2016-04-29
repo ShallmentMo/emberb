@@ -3,27 +3,24 @@ layout: chapter
 title: README.EXT
 ---
 
-This document explains how to make extension libraries for Ruby.
+此文档解释怎样创建 extension 库。
 
 ## Basic Knowledge
 
-In C, variables have types and data do not have types.  In contrast,
-Ruby variables do not have a static type, and data themselves have
-types, so data will need to be converted between the languages.
+在 C 里面，变量有类型，数据没类型。相反地，Ruby 变量没有静态类型，数据本身有类型，所以数据需要在两种语言之间转化。
 
-Data in Ruby are represented by the C type `VALUE`.  Each VALUE data
-has its data-type.
+Ruby 的数据在 C 里面用类型 `VALUE` 来表示。每个 VALUE 数据有它自己的数据类型。
 
-To retrieve C data from a VALUE, you need to:
+要从 VALUE 里面获取 C 数据，你需要：
 
-1. Identify the VALUE's data type
-2. Convert the VALUE into C data
+1. 判断 VALUE 的数据类型
+2. 将 VALUE 转成 C 数据
 
-Converting to the wrong data type may cause serious problems.
+转换成错误的数据类型可能会导致严重的问题。
 
 ### Data-Types
 
-The Ruby interpreter has the following data types:
+Ruby 解释器有以下的数据类型：
 
 T_NIL
 : nil
@@ -99,13 +96,12 @@ T_NODE
 T_ZOMBIE
 : object awaiting finalization
 
-Most of the types are represented by C structures.
+大部分类型都是用 C structure 表示。
 
 ### Check Data Type of the VALUE
 
-The macro TYPE() defined in ruby.h shows the data type of the VALUE.
-TYPE() returns the constant number T_XXXX described above.  To handle
-data types, your code will look something like this:
+在 ruby.h 定义的 TYPE() 得到 VALUE 的数据类型。TYPE() 返回上面列出来的常量 T_XXXX。
+为了处理不同的数据类型，你的代码可能看起来是这样的：
 
 {% highlight c %}
 switch (TYPE(obj)) {
@@ -125,76 +121,39 @@ switch (TYPE(obj)) {
 }
 {% endhighlight %}
 
-There is the data-type check function
+下面也是一个用来检查数据类型的方法
 
 {% highlight c %}
 void Check_Type(VALUE value, int type);
 {% endhighlight %}
 
-which raises an exception if the VALUE does not have the type
-specified.
+它会抛出一个异常如果 VALUE 不是指定的类型。
 
-There are also faster check macros for fixnums and nil.
+对于 fixnums 和 nil，也有一些更快地检查类型的宏。
 
     FIXNUM_P(obj)
     NIL_P(obj)
 
 ### Convert VALUE into C Data
 
-The data for type T_NIL, T_FALSE, T_TRUE are nil, false, true
-respectively.  They are singletons for the data type.
-The equivalent C constants are: Qnil, Qfalse, Qtrue.
-Note that Qfalse is false in C also (i.e. 0), but not Qnil.
+类型 T_NIL, T_FALSE, T_TRUE 的数据分别是 nil, false, true。它们是这些数据类型的单例。与 C 等价的常量是：Qnil， Qfalse， Qtrue。留意到 Qfalse 在 C 里面也是 false（即是，0），而不是 Qnil。
 
-The T_FIXNUM data is a 31bit or 63bit length fixed integer.
-This size is depend on the size of long: if long is 32bit then
-T_FIXNUM is 31bit, if long is 64bit then T_FIXNUM is 63bit.
-T_FIXNUM can be converted to a C integer by using the
-FIX2INT() macro or FIX2LONG().  Though you have to check that the
-data is really FIXNUM before using them, they are faster.  FIX2LONG()
-never raises exceptions, but FIX2INT() raises RangeError if the
-result is bigger or smaller than the size of int.
-There are also NUM2INT() and NUM2LONG() which converts any Ruby
-numbers into C integers.  These macros includes a type check,
-so an exception will be raised if the conversion failed.  NUM2DBL()
-can be used to retrieve the double float value in the same way.
+T_FIXNUM 数据是31位或63位的整形数据。位长根据 long 的位数来决定：如果 long 是 32位的，那么 T_FIXNUM 是31位的，如果 long 是64位的，那么 T_FIXNUM 是63位的。T_FIXNUM 可以用 FIX2INT() 或 FIX2LONG() 来转成 C 的整形数据。尽管你需要在调用它们之前检查数据的类型，它们还是更快的方法。FIX2LONG() 不会抛出异常，不过 FIX2INT() 在结果大于或小于整形的时候会抛出 RangeError。也有 NUM2INT() 和 NUM2LONG() 可以将 Ruby 数字转成 C 整形数据。这些宏都包含了一个类型检查，所以转换失败的话会抛出异常。NUM2DBL() 也可以这样用来获取对应的双精度浮点数。
 
-You can use the macros
-StringValue() and StringValuePtr() to get a char* from a VALUE.
-StringValue(var) replaces var's value with the result of "var.to_str()".
-StringValuePtr(var) does same replacement and returns char*
-representation of var.  These macros will skip the replacement if var
-is a String.  Notice that the macros take only the lvalue as their
-argument, to change the value of var in place.
+你可以用 StringValue() 和 StringValuePtr() 来从 VALUE 获取 char*。StringValue(var) 会用 "var.to_str()" 的结果来替换掉 var 的值。StringValuePtr(var) 也会做同样的替换，并返回 var 的 char* 表示。如果 var 是一个字符串，那么这些宏则会跳过替换。应该留意的地方是，这些宏用 lvalue 来作为它们的参数，对应地改变 var 的值。
 
-You can also use the macro named StringValueCStr(). This is just
-like StringValuePtr(), but always add nul character at the end of
-the result. If the result contains nul character, this macro causes
-the ArgumentError exception.
-StringValuePtr() doesn't guarantee the existence of a nul at the end
-of the result, and the result may contain nul.
+你也可以用 StringValueCStr() 宏。这个宏类似 StringValuePtr()，不过总会在结果之后加 nul 字符。如果结果已包行 nul 字符，这个宏会抛出 ArgumentError 的异常。
+StringValuePtr() 不保证结果后跟随一个 nul，而且结果可能会包含 nul。
 
-Other data types have corresponding C structures, e.g. struct RArray
-for T_ARRAY etc. The VALUE of the type which has the corresponding
-structure can be cast to retrieve the pointer to the struct.  The
-casting macro will be of the form RXXXX for each data type; for
-instance, RARRAY(obj).  See "ruby.h".  However, we do not recommend
-to access RXXXX data directly because these data structure is complex.
-Use corresponding rb_xxx() functions to access internal struct.
-For example, to access an entry of array, use rb_ary_entry(ary, offset)
-and rb_ary_store(ary, offset, obj).
+其它数据类型都有对应的 C structure，例如，结构体 RArray 对应 T_ARRAY，等等。每个有对应结构体的类型的 VALUE 都可以被声明来从结构体里面获取指向结构体的指针。这些声明的宏都对应每个数据类型命名成 RXXXX；例如，RARRAY(obj)。可以查看 "ruby.h" 了解更多。然而，我们并不建议直接存取 RXXXX 的数据，因为它们过于复杂了。用对应的 rb_xxx() 方法可以存取内部的结构体。例如，用 rb_ary_entry(ary, offset) 和 rb_ary_store(ary, offset, obj) 来存取 array 的节点。
 
-There are some accessing macros for structure members, for example
-`RSTRING_LEN(str)` to get the size of the Ruby String object.  The
-allocated region can be accessed by `RSTRING_PTR(str)`.
+也有一些存取结构体内容的宏，例如，`RSTRING_LEN(str)` 可以得到 Ruby String 对象的长度。可以用 `RSTRING_PTR(str)` 来获得内存分配的区域。
 
-Notice: Do not change the value of the structure directly, unless you
-are responsible for the result.  This ends up being the cause of
-interesting bugs.
+注意：不要直接改变结构体的内容，除非这是你的职责。这会导致奇怪的 bugs。
 
 ### Convert C Data into VALUE
 
-To convert C data to Ruby values:
+要把 C 的数据转成 Ruby values：
 
 FIXNUM
 : left shift 1 bit, and turn on LSB.
@@ -202,13 +161,11 @@ FIXNUM
 Other pointer values
 : cast to VALUE.
 
-You can determine whether a VALUE is pointer or not by checking its LSB.
+你可以根据 LSB 来确定一个 VALUE 是不是指针。
 
-Notice Ruby does not allow arbitrary pointer values to be a VALUE.  They
-should be pointers to the structures which Ruby knows about.  The known
-structures are defined in `<ruby.h>`.
+注意到 Ruby 不允许任何东西都是一个 VALUE。它们应该是指向 Ruby 能识别的结构体的指针。Ruby 能识别的结构在 `<ruby.h>` 有定义。
 
-To convert C numbers to Ruby values, use these macros.
+用这些宏可以将 C 数字转成 Ruby values。
 
 INT2FIX()
 : for integers within 31bits.
@@ -220,10 +177,7 @@ INT2NUM()
 
 ### Manipulating Ruby Data
 
-As I already mentioned, it is not recommended to modify an object's
-internal structure.  To manipulate objects, use the functions supplied
-by the Ruby interpreter. Some (not all) of the useful functions are
-listed below:
+就像我所说的，并不建议直接修改一个对象的内部结构。如果要修改对戏那个，请用 Ruby 解释器提供的方法。下面列出了一些：
 
 #### String Functions
 

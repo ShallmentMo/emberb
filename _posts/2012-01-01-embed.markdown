@@ -3,46 +3,32 @@ layout: chapter
 title: Running Ruby in C
 ---
 
-## Compiling ##
+## 编译 ##
 
-Embedding Ruby requires one header `ruby.h`, which includes a platform-specific
-header `ruby/config.h`. You will probably need to tell your compiler about the
-include paths for these headers. You will also need to link with the Ruby lib.
-On my machine, my minimal compiler options are
+想在 C 里面嵌入 Ruby 代码需要引入一个头文件 `ruby.h`，这个头文件会引入平台专用（platform-specific）的 `ruby/config.h` 。你可能需要告诉你的编译器在哪里找到这些头文件。你也需要链接 Ruby 库。在作者的机器上面，最少的编译器选项是这样的
 
     -I/usr/include/ruby-2.1.0 -I/usr/include/ruby-2.1.0/x86_64-linux -lruby
 
-Though, if available, you should really use `pkg-config` to get the appropriate
-options for your distribution:
+然而，如果有可能，你可以用 `pkg-config` 来获取当前合适的选项：
 
     $ pkg-config --cflags --libs ruby-2.1
 
 ## Startup, Teardown ##
 
-Including the Ruby interpreter in your C/C++ program is pretty simple. Just
-include the header and bookend your API calls with a couple function calls.
+引入 Ruby 解释器到你的 C/C++ 程序里面是很简单的事。只需要引入头文件，然后用两个方法来包裹你的 API 调用。
 
 {% highlight c %}
 {% include embed/simple.c %}
 {% endhighlight %}
 
-If the VM fails to start during `ruby_init()` it will print an error and exit
-your program! If you would rather have a softer error, you can instead call
-`ruby_setup()` which returns a nonzero value if a failure occurred
-(unfortunately it is not clear how to get a message for the error[^err]).
+如果 Ruby VM 在 `ruby_init()` 的时候失败了，它会打印出错误然后退出！如果你不希望这样，你可以调用 `ruby_setup()` ，它会在失败的时候返回一个非零值（这样的话，获取错误信息[^err]就变得不清晰）。
 
-If an error occurs during `rb_cleanup()`, it returns a nonzero value &ndash;
-otherwise it returns the argument you passed it. This allows a little shortcut
-for returning an error status if the cleanup fails (as demonstrated in the
-previous example).
+如果 `rb_cleanup()` 执行出错，它会返回一个非零值 &ndash; 否则它会返回你调用时传进来的参数。这样就提供了在 cleanup 失败时返回错误状态的途径。（
+This allows a little shortcut for returning an error status if the cleanup fails）(像之类的例子显示那样).
 
-During cleanup, the VM might evaluate more Ruby code (if you passed a block to
-`at_exit`, for example) which could raise an exception. `ruby_cleanup()` handles
-these by returning a nonzero value and printing an error message. If you instead
-call `ruby_finalize()` they will be raised normally (see the section on
-[Exceptions](../c#rescue) for how to handle them).
+在 cleanup 阶段，Ruby VM 可能会执行意料之外，但是报错的 Ruby 代码（例如，你传了一个 block 给 `at_exit`）。`ruby_cleanup()` 通过返回一个非零值，打印错误信息来处理这种情况。如果你有调用 `ruby_finalize()`，那么它们也会照常调用到。（留意 [Exceptions](../c#rescue) 来了解怎么处理它们）。
 
-Here's an alternative example:
+下面是另一个例子：
 
 {% highlight c %}
 {% include embed/advanced.c %}
@@ -50,49 +36,33 @@ Here's an alternative example:
 
 ## Tweaking the VM ##
 
-You now have a bare-bones Ruby VM running, but you may want to set up a little
-more stuff before you start running Ruby code. To set the name of the Ruby
-script (e.g. `$0`) for error messages and such, use
+上面就是简单的可以运行的 Ruby VM，不过你可能希望在运行 Ruby 代码之前设置更多的东西。例如，为错误信息设置 Ruby 脚本的名字（e.g. `$0`），可以像下面这么做：
 
 {% highlight c %}
 ruby_script("new name")
 {% endhighlight %}
 
-To set up the load path so that gems can be loaded with `require`, use
+设置让 gems 用于 `require` 的 load path，可以像下面这么做：
 
 {% highlight c %}
 ruby_init_loadpath()
 {% endhighlight %}
 
-You can also pass options to the VM just like you would to `ruby` on the command
-line. This is handy for stuff like setting the warning level or verbose
-mode[^opt].
+你也可以像在命令行执行 `ruby` 命令那样传选项过去给 VM。这样的话，设置 warning level 或者 verbose 模式[^opt] 就很方便了。
 
 {% highlight c %}
 {% include embed/options.c %}
 {% endhighlight %}
 
-The arguments to `ruby_options` are `argc` and `argv` just like a main function.
-And just like the main of the `ruby` program, the VM expects to get some Ruby
-code when you call it. If you don't give it the filename of a script to load or
-code to run with `-e`, it will try to read from `stdin`. If you want to set
-options but _not_ run any Ruby code, you can pass it an empty line: `"-e "`.
+传给 `ruby_options` 的参数就像主函数的 `argc` 和 `argv` 。就像 `ruby` 命令那样，VM 期望获得 Ruby 代码来运行。如果你没有传需要加载的脚本文件名，或者没有用 `-e` 来执行，它就会尝试从 `stdin` 读取 Ruby 代码。如果你只是想设置选项，而不想运行任何 Ruby 代码，你可以传空行 `"-e "` 过去。
 
-`ruby_options()` returns a "node" that represents the compiled Ruby code. In some
-cases (such as a syntax error) the node will be invalid and you shouldn't run
-it. `ruby_executable_node()` checks for this. If the node is valid, you can run it
-with `ruby_exec_node()`. The state returned by `ruby_executable_node()` (through
-the pointer) and by `ruby_exec_node()` will be nonzero if an exception was
-raised while compiling or running the code. You can [read the exception
-yourself](../c#rescue), or just pass `state` to `ruby_cleanup()` and it will
-print an appropriate error message.
+`ruby_options()` 返回一个 "node" 代表编译的 Ruby 代码。在某些情况（例如语法错误），"node" 可能是无效的，那么你就不应该运行它。`ruby_executable_node()` 可以用于检测这个。如果 "node" 是有效的，你就可以通过调用 `ruby_exec_node` 来执行它。如果在编译或者运行时抛出一个异常，那么 `ruby_executable_node()` 跟 `ruby_exec_node()` 返回的状态值就会是一个非零值。你可以阅读 [the exception](../c#rescue) 来了解更多，或者传 `state` 给 `ruby_cleanup()` ，那样它可以打印合适的错误信息。
 
-Ruby currently doesn't support any other way of compiling and running code
-separately[^load].
+Ruby 现在还不支持其它方法来编译和执行代码[^load]。
 
-## Success ##
+## 完成 ##
 
-Now you're ready to interact with Ruby! Go back to the [C API](../c).
+现在你可以跟 Ruby 交互了！回去 [C API](../c)。
 
 ## Footnotes ##
 

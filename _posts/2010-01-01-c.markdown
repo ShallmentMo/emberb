@@ -3,106 +3,59 @@ layout: chapter
 title: The Ruby C API
 ---
 
-## Before You Start ##
+## 开始之前 ##
 
-For the greatest chance of success with this guide, I recommend being fairly
-comfortable with C and _very_ comfortable with Ruby.
+如果你想完整看完这篇 guide，我建议你需要不抗拒 C，而且很喜欢 Ruby。
 
-You don't _need_ to know any advanced C concepts in order to use the API; most
-of the complexity is hidden behind functions and macros. However the API is
-**huge** and largely **undocumented**. After you start using it, you will
-inevitably find yourself delving through the Ruby source code at some point to
-figure out the behavior of some obscure function or macro. The Ruby source uses
-some fairly sophisticated C, so you'll need to at least be able to read it.
+如果只是为了用 API，你并不需要知道太多高级 C 语言里面的概念；大多的复杂性都被封装到方法和宏里面了。但是 API 列表实在太 **长＊＊，大部分又 **没有文档**。所以当你开始用的时候，你就会发现你需要深入到 Ruby 源代码来了解一些方法或宏的行为。Ruby 源代码用了不少复杂的 C 技巧，你至少要能够读懂这个。
 
-In the next section I'll say "everything you can do in Ruby, you can also do
-using [the] C API". This is true, but it really should be followed with "...but
-it will generally be more unintuitive in C". If you don't have a strong
-intuition for the design of Ruby and the best practices in idiomatic Ruby, it
-can be extra hard to find the API functions that do what you want.
+在下一节，我将要说“所有你能用 Ruby 做的东西，你都能用 [the] C API 来做”。这是真的，但是用 C 并不直观而已。如果你对 Ruby 的设计和实践并没有强烈的直觉，那么你将会很难找到你想要的 API 方法了。
 
-## The Two Paths ##
+## 结合的两种方法 ##
 
-The official Ruby interpreter is written in C. That means that everything you
-can do in Ruby, you can also do using function calls to Ruby's C API. Why in the
-world would you do this? There are two good reasons:
+Ruby 的官方解释器就是用 C 来写的。意思就是你能用 Ruby 做的东西，你都通过调用 Ruby 的 C API 来做。为什么有人想这么做呢？以下就是两个好理由：
 
-1. You're writing some fancy application in C or C++ and you want some parts of
-   your code to leverage the dynamic flexibility of Ruby. You can run the
-   Ruby interpreter inside your application and use the API to retrieve the
-   results of Ruby code.
-2. You're writing some fancy application in Ruby and you want some parts of your
-   code to leverage the speed and power of C (or an existing C library). You can
-   expose C code to Ruby using the API and compile a special library that Ruby
-   can `require`.
+1. 你正在用 C 或 C++ 来写应用，但你又希望你的某些代码能够具有 Ruby 的动态性和灵活性。那你可以在你的应用里面运行 Ruby 解释器，然后用 C API 来获取 Ruby 代码的运行结果。
+2. 你正在用 Ruby 来写应用，但你又希望你的某些代码可以有 C（或者用 C 来写的库）的速度跟能力。那么你就可以通过用 API 来编译 C 代码成 Ruby 能 `require` 的库来把 C 代码暴露给你的 Ruby 代码。
 
-You'll need to structure your C code differently depending on your goal. If
-you want to embed the Ruby interpreter in C, read [Running Ruby in C](../embed). If
-you want to `require` a compiled C library, read [Running C in Ruby](../extend).
-After you finish that, come back here to learn about the API.
+根据你的目的不同，你也要用不同的方法来组织你的 C 代码。如果你希望嵌入 Ruby 解释器到 C，阅读 [Running Ruby in C](../embed)。如果你想 `require` 一个编译的 C 语言库，阅读 [Running C in Ruby](../extend)。在你读完那两篇文章后，请再回到这里来了解 API。
 
 ## Eval ##
 
-The quick 'n' dirty way to run some Ruby code from C is to `eval` it
+最快能在 C 里面运行 Ruby 代码的方法就是 `eval` it
 
 {% highlight c %}
 {% include c/eval.h %}
 {% endhighlight %}
 
-This is a good fallback if you can't find an API function for something that you
-want to do[^wrap]. `rb_eval_string_protect()` returns the result of the Ruby
-code and sets `state` to some nonzero value if any exception is raised. `VALUE`
-is the C data type for all Ruby objects, as explained in the next section.
+如果你找不到想要的 API 方法[^wrap]，这不失为一个好的替代方案。`rb_eval_string_protect()` 会返回 Ruby 代码的结果，并且会在异常抛出时把 `state` 设为非零值。 `VALUE` 是所有 Ruby objects 的 C 的数据类型，这会在下一节解释。
 
-If `state` is nonzero, `result` will be a `VALUE` representing `nil` and you
-should handle the exception. Alternatively, you can use `rb_eval_string()` which
-doesn't take a `state` argument and instead raises any exceptions normally. See
-[Exceptions](#exceptions) for how to handle both of these cases.
+如果 `state` 是非零值，`result` 会是代表 `nil` 的 `VALUE`，你应该自己来处理例外。你也可以调用不需要传入 `state` 参数的 `rb_eval_string()` 来正常地抛出异常。通过 [Exceptions](#exceptions) 来了解怎么处理这些情况。
 
-Unlike `eval` in Ruby, these functions evaluate the string in an isolated
-binding &ndash; like when you `require` something. So local variables in the
-string will not be accessible from elsewhere and vice versa.
+与 Ruby 的 `eval` 不同的是，这两个方法是在一个隔离的 binding 里面执行那些字符串 &ndash; 就像你 `require` 某些文件。所以字符串里面的本地变量相对其它地方是不可见的，相反亦然。
 
-However, like using `eval` in Ruby, using these functions is not a good
-practice. It's inefficient since the parser is invoked and it somewhat defeats
-the point of writing in C. If you just want to call some Ruby method, we'll go
-over a better way to do that [later on](#send).
+就像在 Ruby 里面使用 `eval`，使用这些方法并不是一种好的实践。这些方法是很没效率的，因为需要触发 parser，这样多多少少与用 C 来写代码的目的相背离。如果你只是想调用某些 Ruby 方法，我们可以有更好的方法来做这个 [later on](#send)。
 
 ## VALUE ##
 
-Before we go any further, we need to understand `VALUE`s. Due to the danger of
-monkeying around inside the VM, the API never lets you directly access Ruby's
-objects[^intern]. Instead, your C code will store and pass around _pointers_ to
-Ruby objects (like how variables in Ruby contain pointers to objects). These
-pointers can be passed to various API functions and macros that will safely
-access and manipulate the Ruby objects. `VALUE` is the API-defined C type for
-these pointers.
+在我们继续下去之前，我们需要先理解 `VALUE`。为了避免你在 VM 里面胡来，API 并不允许你直接修改 Ruby 的 objects[^intern]。作为替代，你需要在 C 代码用 _pointers_ 来保存或传递 Ruby objects（就像 Ruby 变量也是保存指向 objects 的 pointers）。你可以通过把这些 pointers 传给不同的 API 方法和宏来安全地存取或修改 Ruby objects。`VALUE` 就是 API
+为这些 pointers 所定义的 C 类型。
 
-Probably the most frequent question you'll have is: "is this `VALUE` the right
-type?". There are a couple macros for performing this test, and both take a
-[`T_` constant](../readme#data-types) corresponding to the Ruby class you're
-testing for e.g. `T_STRING`, `T_ARRAY`, etc.
+也许你最经常要问的是：“`VALUE` 是不是你想要的类型？”。以下是两个用来检查类型的宏，它们都需要一个与 Ruby 类相关的参数：[`T_` constant](../readme#data-types) ，例如 `T_STRING`，`T_ARRAY` 等等。
 
 {% highlight c %}
 {% include c/checktype.h %}
 {% endhighlight %}
 
-These tests work for subclasses too: if you're testing for a subclass of `Array`
-use `T_ARRAY`, if you're testing for a subclass of `Object` use
-`T_OBJECT`[^tdata]. That being said, these tests _do not work like `is_a?`_;
-even though everything in Ruby `is_a? Object`, testing against `T_OBJECT` will
-only return true for objects for which there is no better fitting constant.
+这些测试对于子类也同样适用：你可以用 `T_ARRAY` 来测试 `Array` 的某个子类；也可以用 `T_OBJECT`[^tdata] 来测试 `Object` 的某个子类。这也是说，这些测试并不像 `is_a?` 那样；尽管在 Ruby 下所有东西都是 Object，用 `T_OBJECT` 来测试的话，只有在没有更合适的常量来测试的时候才会返回 true。
 
-For certain classes, there are specialized macros that are a little more
-efficient than the previous:
+对于内置的类来说，有一些特殊的宏可以用，它们会比之前的更有效率：
 
 {% highlight c %}
 {% include c/check_p.h %}
 {% endhighlight %}
 
-If you want to handle a `VALUE` that could be one of a variety of types, the
-previous macros can be a little clumsy. In that case you can use the `TYPE()`
-macro to get the `T_` constant and handle your logic in a `switch`:
+如果你希望处理一个可以是多种类型的 `VALUE`，那么之前的宏就略显笨拙了。这种情况下，你可以用 `TYPE()` 来获取那个 `T_` 常量，然后用 `switch` 来处理它：
 
 {% highlight c %}
 {% include c/type.h %}
@@ -110,50 +63,33 @@ macro to get the `T_` constant and handle your logic in a `switch`:
 
 ### Constants ###
 
-Most of the standard Ruby constants have global `VALUE`s defined for them in the
-API so you don't need an API call to access them. Modules are prefixed with
-`rb_m` e.g. `rb_mKernel`; classes are prefixed with `rb_c` e.g. `rb_cObject`;
-subclasses of `Exception` are prefixed with `rb_e` e.g. `rb_eRuntimeError`; and
-the standard IO streams are prefixed with `rb_` e.g. `rb_stderr`. `nil`,
-`false`, and `true` are prefixed with `Q` e.g. `Qnil`.[^undef] As a convenience,
-`Qfalse` is also false in C (`0`).
+大多 Ruby 内置的常量都已经定义了全局 `VALUE`，所以你并不需要调用 API 来获取它们。Modules 会用 `rb_m` 作为前缀，例如 `rb_mKernel`；classes 会用 `rb_c` 作为前缀，例如 `rb_cObject`；`Exception` 的子类会用 `rb_e` 作为前缀，例如 `rb_eRuntimeError`；标准 IO 流会用 `rb_` 来作为前缀，例如 `rb_stderr`。`nil`，`false` 和 `true` 会用 `Q` 来作为前缀，例如 `Qnil`。[^undef]为了方便，`Qfalse` 也是 C 里面的 false（`0`）。
 
 ### Translation ###
 
-A few Ruby classes are analogous to C types. These classes will be your primary
-means of transferring data between C and Ruby.
+一些 Ruby 类跟 C 对应的类型类似。这些类会是你用来在 C 和 Ruby 之间转换数据的主要途径。
 
 #### Fixnum ####
 
-Ruby's `Fixnum` corresponds to C's `long`. The `FIX2LONG()` macro gives you the
-`long` for a `Fixnum`. For smaller C types there's `FIX2UINT()`, `FIX2INT()`,
-and `FIX2SHORT()`, but these will raise a `RangeError` if the number wouldn't
-fit.
+Ruby 的 `Fixnum` 与 C 的 `long` 相关。`FIX2LONG()` 宏能给你一个 `Fixnum` 对应的 `long`。对于更小的 C 类型，你可以用 `FIX2UINT()`，`FIX2INT()` 和 `FIX2SHORT()`，不过如果转换失败，则会抛出一个 `RangeError`。
 
-In the other direction, `LONG2FIX()` works for `long` **and** every smaller
-integer C type[^chr].
+反过来看，`LONG2FIX()` 可以给 `long` 和每个更小的整形 C 类型。
 
 #### Bignum ####
 
-Ruby's `Bignum` is for anything bigger than a `Fixnum`, so it works if you need
-to work with `long long`, for example. `rb_big2ll()` and `rb_big2ull()` will get
-you `long long` and `unsigned long long` from a `Bignum` (or raise a
-`RangeError` if appropriate).
+Ruby 的 `Bignum` 是给所有大于 `Fixnum` 的数字使用的。如果你需要用到 `long long` 的话，可以用 `Bignum`，例如，`rb_big2ll()` 和 `rb_big2ull()` 可以将一个 `Bignum` 对应转成 `long long` 和 `unsigned long long` （也有可能抛出 `RangeError` 异常）。
 
-See [Numeric](#numeric) for the reverse direction.
+相反的转换可以看 [Numeric](#numeric)
 
 #### Float ####
 
-Ruby's `Float` corresponds to C's `double`. The `RFLOAT_VALUE()` macro gives you the
-`double` for a `Float`.
+Ruby 的 `Float` 对应于 C 的 `double`。`RFLOAT_VALUE()` 宏将 `Float` 转 成 `double`。
 
-See [Numeric](#numeric) for the reverse direction.
+相反的转换可以看 [Numeric](#numeric)
 
 #### Numeric ####
 
-There are a host of "NUM" macros that try to be more duck-typish about things.
-These will convert their C types to whatever Ruby `Numeric` subclass seems
-appropriate:
+以下是一系列可以动态转换的 "NUM" 宏。它们可以将 C 类型转换成合适的 `Numeric` 子类。
 
 * `INT2NUM()` for `int`
 * `UINT2NUM()` for `unsigned int`
@@ -163,10 +99,7 @@ appropriate:
 * `ULL2NUM()` for `unsigned long long`
 * `DBL2NUM()` for `double`
 
-And there are macros for the opposite direction, which will try to convert
-whatever `Numeric` to the desired C type. These will raise a `RangeError` if
-the value wouldn't fit or `TypeError` if there is no implicit numeric conversion
-(so you can safely pass non-`Numeric` objects).
+也有一些反过来将所有 `Numeric` 转换成想要的 C 类型的宏。如果数值并不能转换，它们就会抛出 `RangeError`；如果并不能转成 Numeric，那它们就会抛出 `TypeError`（所以你可以安全地传非 `Numeric` 对象过去）。
 
 * `NUM2CHR()` for `char` (works for `unsigned char` too)
 * `NUM2SHORT()` for `short`
@@ -179,20 +112,15 @@ the value wouldn't fit or `TypeError` if there is no implicit numeric conversion
 * `NUM2ULL()` for `unsigned long long`
 * `NUM2DBL()` for `double`
 
-A **major** gotcha with these is that _none_ of the macros for converting to
-unsigned types raise an exception if you pass a negative value (surprisingly
-this [isn't a bug][bug]). `NUM2CHR()` also has a couple quirks: it will only
-raise a `RangeError` if the value is too big for an _int_ and when passed a
-string it returns the numeric value of the first character rather than raising a
-`TypeError`.
+它们中的某个陷阱是如果你传一个负值给那些目的转换成无符号类型的宏，它们会抛出异常（this [isn't a bug][bug]）。`NUM2CHR()`也会有一些奇怪行为：它只有在一个值对于 _int_ 类型太大的时候才会抛出 `RangeError` 异常；当你传进一个字符串的时候，它会返回该字符串的第一个字符的数值，而不是抛出一个 `TypeError`。
 
-If you know that the conversion is safe, you should prefer the macros from the
-previous sections as they skip the range checks.
+如果你确定转换是安全的，你应该用前几节的宏来跳过范围检查。
 
 [bug]: https://bugs.ruby-lang.org/issues/9089
 
 #### String ####
 
+Ruby 的 `String` 某种程度上对应 C 的 `char*`。最简单的宏就是 `StringValueCStr()` ，它可以将一个 `String` 转成一个终结符为 null 的 `char*`。这个宏的问题是，Ruby 的 `String` 有可能包含 null，这样的话，`StringValueCStr()` 会抛出一个 `ArgumentError` 的异常！这样的话，你可以用宏 `StringValuePtr()` 和宏 `RSTRING_LEN()` 来得到一个 `char*` 和字符串的 `long` 型长度值。
 Ruby's `String` kinda corresponds to C's `char*`. The simplest macro is
 `StringValueCStr()` which returns a null-terminated `char*` for a `String`. The
 problem here is that a Ruby `String` _might contain nulls_ - in which case
@@ -200,32 +128,19 @@ problem here is that a Ruby `String` _might contain nulls_ - in which case
 macros `StringValuePtr()` and `RSTRING_LEN()` to get a (possibly unterminated)
 `char*` and the string's length as a `long`.
 
-Conversely, if you have a null-terminated `char*`, you can use
-`rb_str_new_cstr()` to create a Ruby `String`. And if you want your `String` to
-contain nulls, use `rb_str_new()` which takes a `char*` and the string's length
-(as a `long`). The encodings of these strings will be `ASCII-8BIT`, which is
-often undesirable in Ruby. You can pass the string `VALUE` to
-`rb_str_export_locale()` to get a new `VALUE` with your locale's
-encoding[^wchar].
+相反，如果你有一个终结符为 null 的 `char*`，你可以用 `rb_str_new_cstr()` 宏创建一个 Ruby `String`。如果你希望你的 `String` 包含 nulls，也可以用以一个 `char*` 和字符串长度值作为参数的 `rb_str_new()`宏。这些字符串的编码都会是 `ASCII-8BIT`，这经常那个不是 Ruby 想要的。这时候你可以传一个字符串 `VALUE` 到 `rb_str_export_locale()` 来得到一个以你的 local 来编码的字符串 `VALUE`[^wchar]。
 
-If you want to build more complex strings, you can do so using the `printf`-like
-function `rb_sprintf()`. This accepts all of the usual conversion specifiers,
-but also accepts an API-defined specifier `PRIsVALUE` which takes a
-corresponding `VALUE` argument. This conversion specifier substitutes a string
-by sending the object `to_s`. You can substitute the result of `inspect` instead
-by adding the `+` flag.
+如果你想构造更复杂的字符串，你可以用类 `printf` 方法 -- `rb_sprintf()`。它除了接受所有通用的转换格式符，也接受 API 定义的格式符 `PRIsVALUE`。`PRIsVALUE` 通过调用 `to_s` 方法来支持 `VAlUE` 参数。You can substitute the result of `inspect` instead by adding the `+` flag.
 
 {% highlight c %}
 {% include c/printf.h %}
 {% endhighlight %}
 
-This custom specifier should work for any `printf`-like function in the API.
-`PRIsVALUE` works by hijacking the `i` conversion specifier, so when printing
-an `int` you should use `d` to ensure that Ruby doesn't think it's actually a
-`VALUE`.
+`PRIsVALUE` 应该可以用在 API 的所有类`printf`方法。`PRIsVALUE` 通过劫持了 `i` 转换格式符来实现，所以如果你需要打印一个 `int`，你应该用 `d` 来避免 Ruby 认为它是一个 `VALUE`。
 
 #### Symbol ####
 
+API 定义了 C 的类型 `ID` 来对应 Ruby 的 `Symbol`。就像 Ruby 传 `Symbol`s 来作为方法名或变量名，许多 API 调用也需要用 `ID` 来表示的方法名，或变量名。你可以用 `SYM2ID()` 和 `ID2SYM()` 来在 `Symbol` 和 `ID` 之间转换。相对 `Symbol` 而言，你可能更希望跟 `char*` 类型的 C 字符串进行转换。你可以用 `rb_intern()` 将 `char*` 转换成 `ID`，相反操作可以用 `rb_id2name()`。
 The API defines a C type `ID` which corresponds to Ruby's `Symbol`. Just like
 how Ruby passes around `Symbol`s as method or variable names, many API calls
 that need a method or variable name use an `ID`. To convert between a `Symbol`
@@ -233,100 +148,68 @@ and an `ID` use the `SYM2ID()` and `ID2SYM()` macros. Instead of a `Symbol` you
 may want to convert to/from a `char*` C string. To get an `ID` from a `char*`
 use `rb_intern()` and for the reverse use `rb_id2name()`.
 
-Since many API functions require an `ID` and in many cases you will not have the
-appropriate `ID` at hand, the API also defines a slew of functions that instead
-take a `char*` and which do the `rb_intern()` call for you. Since these
-functions are often more readable and the overhead of the `rb_intern()` call is
-negligible, I have opted to use the `char*` versions of the API functions
-wherever possible in this guide. If you find yourself frequently using a certain
-C string in API calls, you may see some performance benefit by storing the `ID`
-and using the `ID` versions of the functions (though you'll have to look these
-up yourself in the Ruby headers).
+因为很多 API 方法需要一个 `ID` 来调用，但是大多数情况下你没有合适的 `ID`。API 也定义了大量的以 `char*` 为参数，但是会在内部执行 `rb_intern()` 的方法。因为这些方法更加可读，同时调用 `rb_intern()` 的损失是可以忽略不计的，所以我会更倾向于用这些方法。如果你发现你经常用一个特定的 C 字符串，你可以将它的 `ID` 保存起来，然后用 `ID` 来调用方法，这样的话，你可以获得一些效率上面的好处（尽管你需要在 Ruby 头文件里面查找这些）。
 
 ## Send ##
 
-This section contains API functions for directly calling Ruby methods. You
-should prefer these functions to `rb_eval_string()` and the like whenever
-possible. They are faster since they skip the parser and allow for some
-compile-time checks.
+这一节包含一些直接调用 Ruby 方法的 API 方法。你应该尽可能地用这些方法，而不是 `rb_eval_string()` 之类的方法。这些方法会更快一些，因为它们跳过了语法分析和编译时检查。
 
-The easiest way to send an object a method looks like this:
+send 一个对象的方法的最简单途径大概就类似下面的：
 
 {% highlight c %}
 {% include c/funcall.h %}
 {% endhighlight %}
 
-This is roughly equivalent to the Ruby code
+与其相对应的 Ruby 代码如下：
 
 {% highlight ruby %}
 {% include c/funcall.rb %}
 {% endhighlight %}
 
-The first argument is the receiver. The next is the [`ID`](#symbol) for the
-method name. The third argument is the number of method arguments, which is
-needed since `rb_funcall()` is a varargs function. Then come the actual method
-arguments.
+第一个参数是接收者。下一个参数是代表方法名的 [`ID`](#symbol) 。第三个参数是方法参数的数量，这个参数是存在是因为 `rb_funcall()` 是一个变参的方法。剩下的才是真正的方法参数。
 
-Alternatively, you can use `rb_funcallv()` where the fourth argument is a
-`VALUE*` pointing to a C array of arguments. This also has the variant
-`rb_funcallv_public()` which is like `public_send` in Ruby.
+另外，你也可以用 `rb_funcallv()` 方法，它的第四个参数是一个指向 C 参数数组的 `VALUE*`。这个方法有一个像 Ruyb 里面的 `public_send` 的变形 -- `rb_funcallv_public()` 。
 
 ### Passing Blocks ###
 
-If you want to pass a `Proc` as the block to a method, that's easy. The function
-is just like `rb_funcallv()` but with the proc on the end.
+想传一个作为 block 的 `Proc` 给一个方法是很简单的。该方法就像 `rb_funcallv()`，只是最后多了一个 proc 参数。
 
 {% highlight c %}
 {% include c/proc.h %}
 {% endhighlight %}
 
-If you don't have a proc for the block, you'll need to define a certain kind of
-C function to represent the block. Then there's a different variant of
-`rb_funcallv()` but with a couple extra arguments for the block:
+如果你没有代表 block 的 proc，你需要定义一个 C 方法来代表 block。以下有一个需要两个额外参数的 `rb_funcallv()` 的变形：
 
 {% highlight c %}
 {% include c/block.h %}
 {% endhighlight %}
 
-The last argument to `rb_block_call()` is helpful for passing in values outside
-the block function's scope, but in this example we don't need it (thus `nil`). I
-also recommend against using the first argument to your block function unless
-you're **sure** that only one value was yielded. You can always get all the
-arguments from `argv`, so why not play it safe?[^break]
+`rb_block_call()` 的最后一个参数可以用来在 block 的域之外传进 values，但是我们在例子中没有用到（所以我们用了 `nil`）。我同时建议除非你确定只有一个 value 被 yielded，否则不要使用第一个参数。因为你总能用 `argv` 来得到所有的参数，为什么不安全一点呢？[^break]
 
 ## Builtins ##
 
-Many of Ruby's built-in classes have API functions defined for their most useful
-methods. Using them can save you from the verbosity of always using
-`rb_funcall()` and can provide more compile-time checks. There are for too many
-functions to list here, so I recommend checking them out in the header
+Ruby 的许多内置类都有相应的 API 方法来对应它们的常用方法。使用它们可以避免使用 `rb_funcall()` 时的冗长，也可以提供运行时检查。它们实在太多了，我建议你可以查看头文件 `ruby/intern.h`。
 `ruby/intern.h`.
 
-Functions are generally named like `rb_(class)_(method)` and take at least one
-`VALUE` argument (the receiver). E.g. `rb_ary_pop()` for `Array#pop`,
-`rb_obj_dup()` for `Object#dup`, etc.
+这些方法一般都会像 `rb_(class)_(method)` 那样命名，并且至少有一个 `VALUE` 参数（接收者）。例如，`rb_ary_pop()` 对应 `Array#pop`，`rb_obj_dup()` 对应 `Object#dup`，等等。
 
 ## Require ##
 
-The API can also load some Ruby code from a script. There's an equivalent to
-`require`:
+API 也可以从脚本里面加载 Ruby 代码。以下就是 `require` 的等价用法：
 
 {% highlight c %}
 {% include c/require.h %}
 {% endhighlight %}
 
-As with `require`, these could raise exceptions. Read the [next
-section](#exceptions) for how to handle them.
+跟 `require` 一样，加载过程可能会抛出异常。可以阅读 [next section](#exceptions) 来了解怎么处理异常。
 
-There are also functions for `load` if you want to load a script multiple times:
+如果你希望多次加载一个脚本，API也提供了与 `load` 对应的方法：
 
 {% highlight c %}
 {% include c/load.h %}
 {% endhighlight %}
 
-Just like [`load` in Ruby][rbload], these functions can wrap the loaded code in
-an anonymous module to protect the global namespace. Just pass a nonzero value
-for the second argument.
+就像 [`load` in Ruby][rbload]，这些方法也可以把加载的代码包裹到一个匿名的 module 来保护全局命名空间。只需要在第二个参数里面传一个非零值就可以了。
 
 [rbload]: http://www.ruby-doc.org/core-1.8.6/Kernel.html#method-i-load
 
@@ -334,156 +217,91 @@ for the second argument.
 
 ### Raise ###
 
-To raise an exception, use:
+抛出异常，可以像下面那样调用：
 
 {% highlight c %}
 {% include c/raise.h %}
 {% endhighlight %}
 
-The first and second arguments are the exception class and message &ndash; like
-`raise` in Ruby. The big difference is that the message is a format string [just
-like in `rb_sprintf()`](#string), letting you more easily build a useful
-message.
+第一个参数是异常类，第二个参数是错误消息 &ndash; 就像 Ruby 中 `raise`。最大的不同就是这里的错误消息是一个格式化字符串 [just like in `rb_sprintf()`](#string)，主要为了方便构造消息。
 
 ### Rescue ###
 
-There are several ways to rescue exceptions using the API. All of them require
-the code you're protecting to be in a function that takes and returns a single
-`VALUE`.
+API 提供了几种方法去捕获异常。它们都要求你把你要保护的代码放到一个参数是一个 `VALUE`，返回也是一个 `VALUE` 的方法里面。
 
 {% highlight c %}
 {% include c/danger.h %}
 {% endhighlight %}
 
-Unless you wanted to rescue a function of exactly this type, you will probably
-need to make a wrapper function in this format that runs the desired code. The
-way to access a rescued exception is also independent of the way it is rescued:
+除非你的要保护的代码就是这样的，否则你需要创建一个这种格式的包装器来执行需要的代码。存取捕获到的异常也完全跟它被捕获的方法独立：
 
 {% highlight c %}
 {% include c/handle.h %}
 {% endhighlight %}
 
-`rb_errinfo()` essentially gives you the `VALUE` of Ruby's `$!` (which will be
-`Qnil` if no exception occurred). Unlike in Ruby, you must manually clear the
-exception after reading it[^clear]. Otherwise later API calls might read the old
-value and think another exception has occurred.
+`rb_errinfo()` 本质上返回对应 Ruby 的 `$!` 的 `VALUE`（如果没有异常发生，那么它将会是 `Qnil`）。与 Ruby 不同的是，你需要在读完异常之后手动去清理它[^clear]。不然的话，接下来的 API 调用可能会读到旧的值，然后认为异常发生了。
 
-Next we will go over several methods of rescuing; you can use whichever you
-like, but I think that generally the right choice is determined by your
-[use-case](#the-two-paths) of the API.
+接下来我们需要了解一下用于捕获的几个方法；哪一个你都可以用，但我认为你需要根据你的用例 [use-case](#the-two-paths) 来决定才是正确的选择。
 
 #### rb_rescue2 ####
 
-If you're compiling a library to be loaded by Ruby, you have it easy. Any
-exceptions raised in the API can be rescued as usual in your Ruby code. If you
-want to rescue an exception in the API, you can use `rb_rescue2()` which is
-similar to Ruby's `rescue`.
+如果你只是编译一个库给 Ruby 加载，那问题就很简单。从 API 抛出的异常都可以在你的 Ruby 代码里面被捕获。如果你希望在 API 里面捕获异常，你可以用与 Ruby 的 `rescue` 相似的 `rb_rescue2()` 。
 
 {% highlight c %}
 {% include c/rescue2.h %}
 {% endhighlight %}
 
-The first two arguments are the function to protect and its argument, the next
-two are the function to call if an exception is raised and its argument.
-`rb_rescue2()` is a varargs function, so after that comes a list of the
-exception classes you want to rescue. The last argument should always be `0` to
-indicate the end of the class list. Like `rescue` in Ruby, any exceptions not in
-this list will not be rescued. If you just want to rescue `StandardError` (like
-a blank `rescue` in Ruby), you can use `rb_rescue()` which takes just the first
-four arguments of `rb_rescue2()`.
+最开头的两个参数就是你要保护的方法和它的参数，接下来的两个参数就是异常被抛出时调用的方法跟他的参数。`rb_rescue2()` 是一个变参方法，所以接着的参数就是你希望捕获的异常类列表。最后一个参数需要为0，以此表示异常类列表的结束。就像 Ruby 的 `rescue`，不在列表中的异常是不会被捕获的。如果你想捕获 `StandardError`（就像 Ruby 中的空白 `rescue`），你可以用 `rb_rescue()`，它只接受 `rb_rescue2()` 的前四个参数来调用。
 
-The API does not provide an easy way to run different rescue code for different
-exception classes as Ruby does. You'll need to rescue all the classes you want
-at once and use some kind of switch to handle them separately.
+API 并不支持像 Ruby 那样可以根据不同的异常类执行不同的代码。你需要捕获所有你想要的异常类，然后用 switch 来分别处理。
 
-The API also does not directly provide an equivalent to Ruby's `else` i.e. code
-to run when _no_ exception was raised. One way to do this is using the return
-value of `rb_rescue2()`. If no exception is raised, it returns the return value
-of the first (dangerous) function, otherwise the return value of the second
-(rescue) function. By having these return, say, `Qtrue` and `Qfalse` you can
-detect which case you are in.
+API 也不直接提供类似　Ruby 的 `else` 的功能，即在没有异常情况下执行对应的代码。实现这个的其中一个方法就是利用 `rb_rescue2()` 的返回值。如果没有异常发生，它返回第一个方法(dangerouse function)的返回值，否则就返回第二个方法(rescue function) 的返回值。通过这两种返回值，假设是 `Qtrue` 和 `Qfalse`，你可以知道你是处于哪种情况。
 
 #### rb_protect ####
 
-If you're embedding the Ruby interpreter in C, you need to be _extremely
-careful_ when calling API functions that could raise exceptions: **an uncaught
-exception will segfault the VM and kill your program**. You could call
-`rb_rescue2()` with `rb_eException`, but there's another approach for rescuing
-all exceptions:
+如果你是在 C 里面嵌入 Ruby 解释器，那么你在调用那些可能抛出异常的 API 方法时就需要特别小心：**一个不被捕获的异常将会 segfault 你的 VM，从而杀死你的程序**。你可以用 `rb_eException` 来调用 `rb_rescue2()`，不过我们有另一种方法俩捕获所有的异常：
 
 {% highlight c %}
 {% include c/protect.h %}
 {% endhighlight %}
 
-Like `rb_rescue2()`, the first two arguments are for calling the function to
-protect. However, like `rb_eval_string_protect()`, if an exception is raised
-it returns `Qnil` and sets `state` to some nonzero value. If you want to
-re-raise the exception, pass `state` to `rb_jump_tag()` (this also works for the
-state from the other `*_protect()` functions).
+就像 `rb_rescue2()`，最开头的两个参数就是你需要保护的方法。然而，就像 `rb_eval_string_protect()`，如果异常发生了，它会返回 `Qnil`，然后把 `state` 设置为一个非零值。如果你想重抛出这个异常，你可以把 `state` 传给 `rb_jump_tag()`（这一点对于其它 `*_protect()` 方法也同样有效）。
 
 ### Ensure ###
 
-`rb_ensure()` is similar to `rb_rescue()` except that it doesn't do anything
-about exceptions and the second function is _always_ called after the first.
-That may sound simple enough, but that means that if you want the usual `begin;
-rescue; ensure; end` structure as in Ruby, you'll need another layer of
-wrapping:
+`rb_ensure()` 与 `rb_rescue()` 类似，除了它并不处理异常，而且它的第二个方法总会在第一个方法执行完之后被执行。这听起来很简单，但却意味着如果你想要一个 跟 Ruby 的 `begin; rescue; ensure; end` 一样的结构，你需要多一层的包装器：
 
 {% highlight c %}
 {% include c/ensure.h %}
 {% endhighlight %}
 
-Like `ensure` in Ruby, the return value of `ensure_func()` is never used. If no
-exception occurs, `rb_rescue()` will return the value of `begin_func()` which
-returns the value of `dangerous_func()`. If an exception does occur,
-`rb_rescue()` returns the value of `rescue_func()`.
+就像 Ruby 的 `ensure`，`ensure_func()` 的返回值是不会被使用的。如果没有异常抛出，`rb_rescue()` 返回 `begin_func()` 的返回值，`begin_func()` 返回 `dangerous_func()` 的返回值。如果异常发生了，`rb_rescue()` 返回 `rescue_func()` 的返回值。
 
 ## Definitions, Declarations ##
 
-So far we've been creating and modifying objects directly in the VM's memory,
-but none of our API calls have had a visible effect _within the Ruby code_: a
-`String` made with `rb_str_new_cstr()` can only be accessed from C by default.
+到现在为止我们都是在 VM 里面创建跟修改对象，但是好像我们的 API 调用都没有跟 Ruby 代码有任何交互：用 `rb_str_new_cstr()` 创建的 `String` 默认只能用 C 来存取。
 
-There are a few ways to make things visible to Ruby but they all work the same
-general way: by defining some name that Ruby can access e.g. a variable name, a
-method name, etc. A general warning though: unlike Ruby, **the API lets you give
-things invalid names**. Ruby will raise a `SyntaxError` or `NameError` if you
-try to name a class `foo` (not constant) or an instance variable `bar` (no `@`),
-but the API will happily create them. The API handles this by **not exposing
-invalid names to Ruby**. Since that's probably not what you want, double check
-the names you choose!
+有几个方法来让它们对 Ruby 可见，不过它们都是用同样的原理：通过定义一些 Ruby 能访问的 name，例如，变量 name，方法 name，等等。不过有个注意的地方：不像 Ruby，**API 允许你命名非法的 name**。如果你定义一个叫 `foo` 的类或者一个 `bar` 的实例变量，Ruby 会抛出 `SyntaxError` 或者 `NameError`，但是 API 会直接创建。API 通过**不暴露那些 names 到 Ruby** 来解决这个问题。如果发现程序运行跟所想不一样，可以检查你选择的 name。
 
-Most of the API functions in this section correspond closely to metaprogramming
-methods in Ruby. When you're trying to do something using the API, it can be
-helpful to think about how you would do it in Ruby using only metaprogramming
-method calls. For example, rather than `class Foo; def bar; end; end`, think
-`Foo = Class.new; Foo.define_method(:bar) {}`.
+这节的大部分 API 方法跟 Ruby 的元编程方法相符。当你尝试用 API 来写代码的时候，想想你在只有 Ruby 元编程方法会怎么做是很有帮助的。例如，相比 ``class Foo; def bar; end; end`，多想想 `Foo = Class.new; Foo.define_method(:bar) {}`。
 
 ### Global Variables ###
 
-The simplest way to deal with globals is:
+处理全局变量最简单的方法是：
 
 {% highlight c %}
 {% include c/global.h %}
 {% endhighlight %}
 
-If you're frequently accessing Ruby's globals, you can set up a `VALUE` which
-will be automatically synchronized with one.
+如果你需要经常存取 Ruby 的某个全局变量，你可以建立一个可以自动同步的 `VALUE`。
 
 {% highlight c %}
 {% include c/global2.h %}
 {% endhighlight %}
 
-The `VALUE` should be initialized before you create the global in Ruby and it
-should be global in C as well &ndash; you don't want it to go out of scope while
-Ruby is using it! For `rb_define_hooked_variable()`, you can pass `NULL` for the
-getter/setter if you want to synchronize normally for that operation. Or you can
-throw out `global` entirely with `rb_define_virtual_variable()` though of course
-the getter and setter _must_ be defined in that case.
+`VALUE` 值应该在你在 Ruby 里面创建全局变量前被初始化，它在 C 里面也应该是全局的 &ndash; 你总不想在 Ruby 访问它的时候需要切换变量范围！对于 `rb_define_hooked_variable()` 的话，如果你只是想同步，你可以传 `NULL` 过去就可以了。或者你也可以用 `rb_define_virtual_variable()` 直接抛出 `global`，这种情况下，getter 跟 setter 方法都需要已定义。
 
-If you ever create a global `VALUE` in C which is _not_ exposed to Ruby, you
-must tell the garbage collector about it to prevent it from being prematurely
-cleaned up:
+如果你在 C 里面创建了一个不暴露给你 Ruby 的全局 `VALUE`。你需要提醒垃圾回收，免得它回收了这个 `VALUE`：
 
 {% highlight c %}
 {% include c/gc.h %}
@@ -491,46 +309,41 @@ cleaned up:
 
 ### Class and Instance Variables ###
 
-Getting/setting instance variables is similar to the simple way of accessing
-globals, but of course you need an object to get the variable from.
+存取实例变量跟存取全局变量相类似，除了你需要传一个 object 来指明它的实例变量。
 
 {% highlight c %}
 {% include c/ivar.h %}
 {% endhighlight %}
 
-There isn't an automatic way to synchronize instance variables like you can with
-globals.
+这里就不存在像全局变量那样可以自动同步实例变量的方法了。
 
-For class variables, the methods are `rb_cv_get()` and `rb_cv_set()` and of
-course the first argument should be a class object.
+对于类变量，方法改为 `rb_cv_get()` 和 `rb_cv_set()` 就可以了，当然第一个参数需要是一个类对象。
 
 ### Constants ####
 
-Constants are defined similarly, but with the module to define them under:
+常量定义也是差不多的，不过指明它属于的 module：
 
 {% highlight c %}
 {% include c/constant.h %}
 {% endhighlight %}
 
-You undefine a constant by setting it to `Qundef`. Getting a constant's `VALUE`
-is a little nuanced. The API function you call depends on what you want to
-happen if the constant is _not_ defined in the module you specify:
+你可以通过把变量设为 `Qundef` 来 undefine 一个常量。获取一个常量的 `VALUE` 的方法有些细微的差别。你需要依据你期望该常量在那个 module 下未被定义时的行为来选择用哪个方法。
 
 {% highlight c %}
 {% include c/const_get.h %}
 {% endhighlight %}
 
-All of these API calls will get private constants too.
+所有这些 API 方法都可以用来获取私有常量。
 
 ### Modules and Classes ###
 
-Defining modules is super easy.
+定义 modules 很简单。
 
 {% highlight c %}
 {% include c/module.h %}
 {% endhighlight %}
 
-Classes work the same way but they also need a superclass.
+类也是这么去定义，不过需要指明父类。
 
 {% highlight c %}
 {% include c/class.h %}
@@ -538,125 +351,87 @@ Classes work the same way but they also need a superclass.
 
 ### Methods ###
 
-Here's where it gets interesting. There are many kinds of API calls for defining
-methods, but before you use any of them you'll need a C function that the method
-calls. The function must return a `VALUE` and have one `VALUE` argument for the
-receiver of the method. There are three ways you can define its other arguments:
+现在开始变得有趣了。API 有很多种调用来定义方法，不过你要在用它们之前定义一个 C 方法。这个 C 方法需要返回一个 `VAlUE` ，也需要传进一个作为接收者的 `VALUE` 参数。下面有三种方法来定义它的参数：
 
 {% highlight c %}
 {% include c/methodc.h %}
 {% endhighlight %}
 
-So really the API only lets you define two types of methods: ones that take a
-fixed number of arguments, and ones that slurp up all of their arguments. What
-about all of Ruby's fancy argument features? Where are optional arguments,
-options hashes, blocks, and all the mixtures of those?
+所以事实上 API 只让你定义两类方法：一类接收固定数量的参数，另一类把所有参数放到一个数组里面。那么 Ruby 那些参数特性哪去了？可选参数，选项哈希，block，还有它们的组合都去哪了？
 
 #### Parsing Arguments ####
 
-Well, if you accept a variable number of arguments you could code all of that
-logic yourself in the method, and make it _behave_ like it has a fancier method
-definition in Ruby. Thankfully, the API has a shortcut for doing exactly that.
-To use it, you should use the C array function definition, then you can pass
-`argc` and `argv` along to:
+如果你想要一个参数数量可变的方法，你可以在你的方法里面写那些处理，使得它表现得像 Ruby 的方法那样。谢天谢地，API 提供了做这个的方法。为了支持这个，你应该用那种 C 数组的方法定义，这样你才可以传 `argc` 和 `argv` 过去：
 
 {% highlight c %}
 {% include c/scan.h %}
 {% endhighlight %}
 
-Here `fmt` is a format string describing how the method arguments would look in
-Ruby. The string can have at most 6 characters, where each character describes a
-different section of the arguments. The six sections and their corresponding
-characters are (in order):
+`fmt` 是一个可以描述 Ruby 的方法参数的带格式的字符串。`fmt` 最多只能有六个字符，每个字符描述你参数的不同部分。这六个部分和它们的意义如下：
 
-1. The number of leading mandatory arguments: a digit
-2. The number of optional arguments: a digit
-3. A splatted argument: `*`
-4. The number of trailing mandatory arguments: a digit
-5. Keyword arguments: `:`
-6. A block argument: `&`
+1. 开头的强制的参数数量：数字
+2. 可选参数数量：数字
+3. 变长参数（a splatted argument）: `*`
+4. 尾部强制参数数量：数字
+5. 关键字参数：`:`
+6. 代码块参数：`&`
 
-Each section is optional, so you can leave out the characters for things you
-don't need. Be aware that the parsing of the format string is greedy: `1*`
-describes a method with one mandatory argument and a splat. If you want one
-_optional_ argument and a splat you must specify `01*`. Following the format
-string, you must pass a `VALUE*` for each _Ruby_ argument. The number of
-pointers passed should equal the "total" of the six sections, though you can
-pass `NULL` for an argument you don't care about. For example the format string
-`21*&` should have 5 `VALUE*`s passed (2 mandatory, 1 optional, 1 splatted, 1
-block).
+每部分都是可选的，所以你可以不填那些你不需要的字符。不过有点你需要注意的是这个格式化字符串是贪婪的：`1*` 描述了一个声明一个强制参数和变长参数的方法。如果你想要声明一个有一个可选参数和一个变长参数的方法，你需要声明为 `01*`。在格式化字符串之后，你需要传 `VALUE*` 给每个 Ruby 参数。需要传的指针数量需要等于这六个部分的总数，虽然你可以传一个 `NULL` 过去。举个例子，对于格式化字符串 `21*&`，你需要传5个 `VALUE*` 过去（2 个强制参数，一个可选参数，一个变长参数，一个代码块）。
 
-`rb_scan_args()` unpacks `argv` using the `VALUE*`s you pass it and will
-raise a fitting exception if the wrong number of arguments were passed.
+`rb_scan_args()` 会用你传过去的 `VALUE*` 来解析 `argv`，如果你传过来的参数数量有误，则会抛出一个异常。
 
 {% highlight c %}
 {% include c/methodex.h %}
 {% endhighlight %}
 
-You can also use the return value of `rb_scan_args()` to determine how the
-function was called. It returns the number of arguments that were passed in
-Ruby.
+你也可以利用 `rb_scan_args()` 的返回值来判断方法的调用。它会返回在 Ruby 传过来的参数数量。
 
 #### Handling Blocks ####
 
-There are two ways to check if your C method has been called with a block:
+以下是判断一个方法是否被传进一个代码块的两种方法：
 
 {% highlight c %}
 {% include c/checkblock.h %}
 {% endhighlight %}
 
-There are two ways to capture the block as a proc. If you're using
-`rb_scan_args()` for your method arguments, just include `&` in your format
-string to get it. If you aren't using `rb_scan_args()`, there's an API call
-equivalent to `Proc.new` which converts the method's block to a proc:
+有两种方法将 block 转为 proc。如果你用 `rb_scan_args()` 的话，在你的格式化字符串包含 `&` 就可以了。如果你不是用 `rb_scan_args()`，下面是一个类似于 `Proc.new` 的 API 调用可以将一个方法的 block 转为 proc：
 
     VALUE block;
     block = rb_block_proc();
 
-If you don't want to capture the block, there are a few ways to yield to it:
+如果你并不希望获取 block，以下有几个方法可以 yield 这个 block：
 
 {% highlight c %}
 {% include c/yield.h %}
 {% endhighlight %}
 
-There's also `rb_yield_values2()` which is like `rb_yield_values()` but instead
-of varargs the second argument is a `VALUE*`[^yield].
+API 调用里面也有个类似 `rb_yield_values()` 的 `rb_yield_values2()` 方法，不过它的第二个参数是 `VALUE*`[^yield]。
 
 #### Super ####
 
-You might want to call `super` in your method.
+你可能想在你的方法里面调用 `super`。
 
 {% highlight c %}
 {% include c/super.h %}
 {% endhighlight %}
 
-Unlike in Ruby `rb_call_super()` will **not** implicitly pass along the method
-arguments to the super if you give it no arguments. You must explicitly pass the
-correct `argc` and `argv` (it _does_ automatically pass `self`). For that reason
-I recommend using the C array style of method definition if you want to use
-`rb_call_super()`.
+如果你不传参数的话，`rb_call_super()` 并不能像 Ruby 那样会隐含地将方法参数传给 super。你需要明确传进正确的 `argc` 和 `argv`（它可以自动传如 `self`）。出于这个原因，如果你想用 `rb_call_super()` 的话，我建议用 C 数组特色的方法定义。
 
 #### Definition ####
 
-Setting up the C function is the hard part, now it's easy to define the method
-in Ruby. Every API call to create a method takes at least the method name
-(`char*`), a pointer to your C function, and an `argc` describing its arguments.
-`argc` should be:
+构建 C 方法是最困难的那部分，不过在 Ruby 内定义方法就变得简单了。每个用来创建方法的 API 调用都至少需要方法名（`char*`），指向你 C 方法的一个指针，和一个描述参数的 `argc`。`argc` 需要满足：
 
-1. For a fixed number of arguments, the number of arguments (not counting the
-   receiver)
-2. For a variable number of arguments in a C array, `-1`
-3. For a variable number of arguments in a Ruby Array, `-2`
+1. 如果参数数量固定的话，就是参数的数量（不包括接收者）
+2. 对于在 C 数组的变长参数，用 `-1`
+3. 对于在 Ruby 数组的变长参数，用 `-2`
 
-Everything is pretty self-explanatory from there:
+下面的代码可以很好解释自己的用法：
 
 {% highlight c %}
 {% include c/methodr.h %}
 {% endhighlight %}
 
-There's also a shortcut for defining a method in a module _and_ its
-singleton class. This is used a lot in `Math`, for example, letting you `include
-Math` to avoid typing `Math.` before every method call.
+下面是一个在 module 和它的 singleton 类里面定义方法的捷径。这个经常在 `Math` 里面用到，例如，方便你 `include Math` 来避免在每个方法前面输入 `Math.`
 
 {% highlight c %}
 {% include c/modulefunc.h %}
@@ -664,7 +439,7 @@ Math` to avoid typing `Math.` before every method call.
 
 ### Other Stuff ###
 
-Some simple API functions for class/method definitions:
+以下是一些用来定义 class/method 的 API 方法：
 
 {% highlight c %}
 {% include c/etc.h %}
@@ -672,63 +447,30 @@ Some simple API functions for class/method definitions:
 
 ## Data ##
 
-By now you should be able to create and manipulate Ruby classes using the API,
-but how can you create a Ruby class that encapsulates data from the C world? If
-your data can be naturally translated into `VALUE`s it's easy: convert and
-assign to instance variables as usual. But what if your data have no Ruby analog
-(e.g. data structures defined by some C library)?
+现在你应该可以用 API 来创建和修改 Ruby 类，但是你应该怎样创建一个封装了 C 数据的 Ruby 类呢？如果你的数据可以被转成 `VALUE`，那么这很简单：转化并赋值给实例变量就可以了。不过如果你的数据并不能对应上 Ruby 呢（例如在 C 库里面定义的数据结构）？
 
-The API lets you encapsulate C data by creating a `VALUE` of the desired class
-and then storing a `void*` pointing to the C data inside the Ruby object. Then
-whenever you need acces to the C data, you can unpack the pointer and cast it
-back to the correct type. But where does this encapsulation occur? Let's answer
-that question with a question: what happens when you tell Ruby to create an
-object using `new`? Basically this:
+API 允许你通过在类里面创建一个 `VALUE`，然后用它来保存一个在 Ruby object 里面指向 C 的数据 `void*` 的。然后不管什么时候你需要存取 C 的数据，你可以把这个指针拆出来，并用正确的类型来声明它。不过封装是在哪里发生的呢？让我们用一个问题来回答那个问题：当你在 Ruby 里面用 `new` 来创建一个对象到底发生了什么？基本是这样的：
 
 {% highlight ruby %}
 {% include c/new.rb %}
 {% endhighlight %}
 
-Before calling the _instance method_ `initialize` that we know so well, `new`
-first calls the _class method_ `allocate` to actually create the object. That is
-the method you'll need to define if you want your objects to wrap C data. The
-following example creates a class `Foo` which wraps an `int` that can be set
-by `initialize`:
+在调用实例方法 `initialize` 之前，`new` 先调用类方法 `allocate` 来真正地创建一个实例。如果你希望你的对象包装 C 的数据，那么这就是你需要定义的方法。下面的例子创建了一个包装了一个能在 `initialize` 设置一个 `int` 变量的 `Foo` 类：
 
 {% highlight c %}
 {% include c/wrap.h %}
 {% endhighlight %}
 
-In most cases you'll probably be wrapping something more complicated (like a
-`struct`), but the principles will be the same. After allocating the C data, we
-use the `Data_Wrap_Struct()` macro to wrap the pointer in a `VALUE`. The first
-argument is the class to give the `VALUE`, which here is the receiver since
-we're in a class method. The second argument is used by Ruby's garbage collector
-and will be described later, but as long your C data doesn't point to any Ruby
-objects you don't need it and can pass `NULL`. The third argument is the
-function that the garbage collector will call when the object is destroyed, and
-last is the data pointer itself. `VALUE`s that wrap C data will have type
-`T_DATA` with respect to the [`TYPE()` macro](#value).
+大多数情况，你可能是包装些更复杂的东西（例如一个 `struct`），不过原理是一样的。在分配到 C 的数据内存后，我们用 `Data_Wrap_Struct()` 宏来用 `VALUE` 来包装该指针。这个宏的第一个参数是保存 `VALUE` 的类，在这里的话，就是接收者，因为我们就在一个类方法。第二个参数是用于 Ruby 垃圾回收的，我们会在以后讲到的，不过只要你的 C 的数据不指向任何 Ruby 对象，你就不需要它，可以传 `NULL` 过去。第三个参数是当实例被毁灭时给垃圾回收调用的方法。最后一个就是这个指针。用 [`TYPE()` macro](#value) 来查看包装 C 数据的 `VALUE` 会返回 `T_DATA`。
 
-`Data_Get_Struct()` is simpler: it takes the object to unwrap, the type of the
-underlying data, and the pointer to assign the data to.
+`Data_Get_Struct()` 就更简单了：它需要传进要拆包的对象，数据的类型和指向数据的指针。
 
-This separation of allocation and initialization doesn't jive with [RAII][raii],
-so if you're using C++ you will probably want to use [placement new][place] when
-wrapping data. If you're having trouble splitting up allocation and
-initialization, you can just wrap your data in a `struct` and do the _actual_
-allocation in `initialize`.
+这种分配内存和初始化与 [RAII](raii) 一点也不沾边，所以如果你用 C++ 的话，你可以想在包装数据的时候用 [placement new][place]。如果你在分开分配内存跟初始化遇到困难，你可以仅仅用一个 `struct` 来包装你的数据，然后在 `initialize` 时候做真正的分配内存。
 
 [raii]: http://wikipedia.org/wiki/Resource_Acquisition_Is_Initialization
 [place]: http://en.cppreference.com/w/cpp/language/new#Allocation
 
-In simple cases (like the previous example) you can make your code a little less
-verbose. If the function to free your data just calls `free()` as in the
-example, you can pass `RUBY_DEFAULT_FREE` as the function pointer and Ruby will
-free it for you (**don't** use `NULL` unless you like memory leaks). Similarly,
-if your allocation is just a `malloc()` as in the example, the macro
-`Data_Make_Struct()` does the allocation for you _and_ wraps it. We could
-rewrite the allocation function from the previous example as such:
+在一些简单的情况下（像之前的例子）你可以写得更简短些。如果释放你的数据只是调用 `free()`，你可以传 `RUBY_DEFAULT_FREE` 过去，Ruby 可以为你释放内存（千万不要用 `NULL`，除非你喜欢内存泄漏）。相似地，如果只是调用 `malloc()` 来分配内存，`Data_Make_Struct()` 可以帮你分配内存并包装它。我们可以重写上面的分配内存方法：
 
 {% highlight c %}
 {% include c/makestruct.h %}
@@ -736,112 +478,57 @@ rewrite the allocation function from the previous example as such:
 
 ### Marking ###
 
-That `NULL` argument we passed to the wrapping macros is the pointer to your
-object's "mark function". This is so named because of the garbage collector's
-"mark and sweep" algorithm. The basic idea behind mark and sweep is that when
-the garbage collector needs to free up memory, it performs two passes: the first
-(mark) pass iterates through every _referenced_ Ruby object and marks it as
-active, then the second (sweep) pass iterates through every _allocated_ Ruby
-object and frees the ones that haven't been marked active.
+我们传给包装宏里的 `NULL` 参数就是指向你的对象的 "mark function" 的指针。这个命名的原因就是垃圾回收的 "mark and sweep" 算法。这个算法的思想就是当垃圾回收机制需要释放内存的时候，它会执行两个过程：第一个（mark）迭代所有引用的 Ruby 对象，然后标记它是活跃；然后第二个（sweep）迭代所有分配了内存的 Ruby 对象，如果它没有被标记为活跃的则释放掉。
 
-This is relevant to wrapping C data because it's possible that you might wrap a
-C `struct` which contains a Ruby `VALUE` &ndash; which the garbage collector is
-responsible for cleaning up. Since the garbage collector is only aware of
-`VALUE`s referenced _by Ruby_ (not by C pointers), it won't be able to mark the
-referenced `VALUE` as active. The result is that as soon as the garbage
-collector needs to free up some memory, your C data is going to end up with a
-reference to a nonexistent Ruby object.
+这也跟包装 C 的数据有联系，因为你可能包装了一个包含了 Ruby `VALUE` 的 C `struct` &ndash; 这是垃圾回收有职责回收的。由于垃圾回收器只能察觉到被 Ruby 访问的 `VALUE`（不是被 C 指针指向的），它并不能标记这个 `VALUE` 是活跃的。这样的话，只要垃圾回收器需要释放内存，你的 C 数据就变成指向一个不存在的 Ruby 对象。
 
-In the following example, we'll wrap a C `struct` which contains a `VALUE`. The
-mark function has the same signature as the free function and all it has to do
-is mark any `VALUE`s in the `struct`:
+下面的例子里，我们包装一个包含一个 `VALUE` 的 C `struct`。这个标记函数跟释放函数一样的函数签名，不过它做的是标记 `struct` 里面的 `VALUE`：
 
 {% highlight c %}
 {% include c/mark.h %}
 {% endhighlight %}
 
-If your `struct` contains a pointer to a C array of `VALUE`s, you can instead
-use `rb_gc_mark_locations()` which takes two arguments: the pointers to the
-start and end of the array (the end being equal to the starting pointer plus the
-array length).[^maybe]
+如果你的 `struct` 包含一个指向包含 `VALUE` 的 C 数组的指针，你可以用 `rb_gc_mark_locations()`，它需要传进两个参数：指向数组开头跟结尾的指针（结尾等于开头的指针加上数组的长度）。[^maybe]
 
 ## Threading ##
 
 ### Ruby in C Threads ###
 
-If you're making a lot of API calls and running a lot of Ruby code from C, at
-some point you might catch yourself thinking, "I'm running all of these slow
-Ruby methods using the API. Maybe I can thread things to keep my code fast!"
-That's a reasonable thought, but when you act on it keep in mind that **the Ruby
-VM is not at all thread safe**. Ideally, all of your API code should run in a
-single thread. If not, you'll probably need to wrap every API call with a locked
-mutex to make sure that you never ever have multiple threads interacting with
-the API at the same time.
+如果你需要创建很多 API 调用并在 C 里面运行很多 Ruby 代码，你可能会想，“我正在用 API 来运行这些缓慢的 Ruby 方法。我是不是可以把它放到线程里面来让我的代码快点呢？” 这是个合理的想法，不过当你实现它的时候，你要记住 **Ruby VM 不都是线程安全的**。理想状态下，所有 API 代码需要在一个线程里面运行。如果不是，你需要用锁机制来包装所有 API 调用，以此确定你不会同时有多个线程跟 API 交互。
 
-If you just want to create normal Ruby `Thread`s using the API (and don't mind
-the GVL, as described in the next section), there's an easy way to do that:
+如果你只是想用 API 来创建一个 Ruby `Thread`（并不在意 GVL，下节会讨论），下面是实现这个的简单方法：
 
 {% highlight c %}
 {% include c/thread.h %}
 {% endhighlight %}
 
-Other `Thread` functions are in `ruby/intern.h` (but there's always
-`rb_funcall()` for everything else).
+其它 `Thread` 相关方法在 `ruby/intern.h` 里面（其它的都会有 `rb_funcall()`）。
 
 ### C in Ruby Threads ###
 
-On the other hand, if you expose some heavy C code to Ruby with the API (if
-you're writing an extension that wraps a C library, for example), you should
-spend some time thinking about a nasty thing called the global VM lock (GVL).
-Because most of the API is not `Thread` safe, the GVL locks down almost all Ruby
-code so that only a single `Thread` can run at a time. This is the reason why
-you'll often hear people say that `Thread` does not allow true parallelism.
+另一方面，如果你想用 API 暴露 C 代码给 Ruby（例如你正在写一个 extension 来包装一个 C 的库），你需要花点时间来了解一下这个名字叫全局 VM 锁（GVL）的讨厌玩意。因为大部分的 API 都不是线程安全的，GVL 锁住几乎所有的 Ruby 代码来让你每次只运行一个线程。这就是为什么你经常给你听到别人说线程并不能实现并行。
 
-The VM also applies the GVL to any C code you expose to Ruby. That's why you can
-use the API without worrying about it exploding when someone calls your C code
-from inside a `Thread`. The downside of this is that if your C code takes a
-while to run, you won't see any performance benefit from calling it in a
-`Thread` because **it will block all other threads** while it runs. But the GVL
-is only needed to protect API calls. If you have some C code that doesn't use
-the API, you can tell the VM to release the GVL before running your code in a
-thread and to reacquire it when it completes, allowing for true parallelism.
-Locking and unlocking the GVL does carry a performance hit, so only resort to
-this if you notice that you're having significant problems due to blocked
-threads.
+Ruby VM 也会在你给 Ruby 暴露的 C 代码上面运用 GVL。这就是为什么别人在用你的 C 代码时你可以不用担心这个。这样的缺点就是如果你的 C 代码需要比较长的时间来运行，你用 `Thread` 来运行它也不会有任何性能提升，因为 **它会阻塞别的线程**。不过只有你需要保护你的 API 调用时才需要 GVL。如果你有些 C 代码是不需要用到 API 的，你可以在你用线程来运行代码前让 VM 去释放 GVL，然后你完成的时候才去再获取它，这样就可以达到并行的目的。锁和解锁 GVL 会有性能损失，所以只有在你确定由于线程阻塞导致严重的问题的时候才这么做。
 
-The code to do this is considered so fancy by the Ruby developers that you
-actually need to include another header to use it. First we'll look at the
-slightly simpler way to release the GVL:
+下面的代码在 Ruby 开发者看来有点奇妙，你需要引入另一个头文件来实现这个。首先我们看一下释放 GVL 的简单代码：
 
 {% highlight c %}
 {% include c/gvl2.h %}
 {% endhighlight %}
 
-Since the function that is run without the GVL gets and returns data using
-`void*`, you may want to define a `struct` for passing data via pointers.
+由于这个不在 GVL 下运行的方法用 `void*` 来获取跟返回数据，你可能也希望定义一个 `struct` 来传递数据。
 
-If you unlock the GVL as above you will find that while your code does run
-in parallel, it can't be interrupted (by signals, `Thread.kill`, etc.)! To
-allow for that you must pass an unblocking function using the last two
-arguments:
+如果你像上面那样解锁 GVL，你会发现你的代码是并行了，但是却不能被中断（用 signal，`Thread.kill` 等等）！为了允许这个，你需要在后面两个参数传进解锁的方法。
 
 {% highlight c %}
 {% include c/gvl.h %}
 {% endhighlight %}
 
-The unblocking function is called in the event of an interrupt. To make it work,
-you will probably need to pass a pointer to both functions that can be used to
-communicate an interrupt from one to the other. The interrupted function should
-perform any necessary cleanup before returning early.
+这个解锁的方法会在中断发生的时候执行。为了让代码能正常运行，你可能需要给它们传一个在两者之间通信的指针。被中断的方法需要在提前返回时执行必要的清理。
 
-Alternatively, if the interrupted function doesn't _need_ to perform any special
-cleanup, you can use the built in unblocking function `RUBY_UBF_IO`[^ubf]
-(which ignores the unblocking argument). That simply forwards the interrupt to
-the running thread.[^int]
+如果方法不需要运行执行特别的清理，你可以用内置的解锁方法 `RUBY_UBF_IO`[^ubf]`（它会忽略解锁参数）。它只是转发中断信号给正在跑的线程。[^int]
 
-If you go through all of that effort to release the GVL only to find that you
-need to make an API call in your unlocked thread, there's a function to
-temporarily reacquire the GVL:
+如果你在释放 GVL 之后发现你需要在你的解锁的方法执行 API 调用，以下是用来暂时获取 GVL 的方法：
 
 {% highlight c %}
 {% include c/with_gvl.h %}
@@ -851,27 +538,13 @@ temporarily reacquire the GVL:
 
 ### README.EXT ###
 
-[README.EXT](../readme) is Ruby's official API documentation. It's included in
-the Ruby source as a plain text file, but I've HTML-ified it for nicer online
-reading. It's a bit spotty and has some poor recommendations (in my opinion),
-but it is also a little more exhaustive on certain topics. In many cases this is
-because I intentionally skipped something that I either found not useful or
-better documented elsewhere.
+[README.EXT](../readme) 是 Ruby 官方的 API 文档。它是 Ruby 源代码里面的一个文本文件，不过我格式化成 HTML 了。它虽然有些污点和不好的建议（在我的观点看来），但在某些主题上它又是很详尽的。在很多情况下，是因为我故意跳过某些我觉得没啥用或者在其它地方已经讲得很清楚的部分。
 
 ### Headers ###
 
-I think some of the handiest resources are the Ruby headers themselves. The full
-API (i.e. everything you get by including `ruby.h`) easily consists of a
-thousand functions, macros, constants, and globals &ndash; most of which have
-never been documented. However _most_ things are reasonably named and you should
-be able to figure out what they do from the header. Most everything you need
-should be in the headers `ruby/ruby.h` and `ruby/intern.h`. The former has all
-of the VM and metaprogramming functions, the latter has all of the functions for
-interacting with Ruby's built in classes.
+我认为有些方便的资源就是 Ruby 头文件它们。全部的 API （即是你通过 `ruby.h` 引入的所有东西）包含了上千的方法，宏，常量和全局变量 &ndash; 它们中的大多数从未被写进文档。然后它们的大多数都命名地很合理，你应该可以从头文件看出它们是干什么用的。你需要的大多数应该都在 `ruby/ruby.h` 和 `ruby/intern.h` 里面。前者包含了所有 VM 和元编程的方法，后者包含了所有跟 Ruby 内置类相关的方法。
 
-There are also some headers _not_ pulled in by `ruby.h` which you can include to
-get additional API functionality. Maybe one day I'll write another section to
-this guide going over them:
+也有些头文件并没有在 `ruby.h` 里面被引入，你可以引入来获得另外的 API 功能。也许有天我会写另一节来覆盖它们：
 
 * `ruby/debug.h` (experimental) functions for profiling and tracing code
 * `ruby/encoding.h` functions for working with string encodings
@@ -884,15 +557,11 @@ this guide going over them:
 
 ### Source ###
 
-If you find some function in the header that isn't documented anywhere, your
-next stop should be the Ruby source code.
+如果你发现没有在头文件解释到的方法，你应该到 Ruby 源代码里面找找看。
 
     $ git clone https://github.com/ruby/ruby.git
 
-When reading through the source code, always keep the headers at hand: there are
-lots of really useful functions in there that _look_ like they should be in the
-API, but actually aren't. In most cases there should be an API function
-elsewhere that wraps the call to the useful function.
+当浏览源代码时，记住保持那些头文件在手：那里有很多很有用的方法看起来应该是在 API 里面，但事实上不是。大多数情况，它们都会被包装在别的 API 方法下。
 
 ### Examples ###
 

@@ -3,123 +3,85 @@ layout: chapter
 title: Running C in Ruby
 ---
 
-## Compiling ##
+## 编译 ##
 
-Compiling C code to be loaded as a Ruby extension requires some fancy compiler
-options. Ruby's [`mkmf` stdlib][mkmf] makes it easy to do this by generating an
-appropriate makefile for you.
+编译作为 Ruby extension 来加载的 C 代码需要一些编译器技巧。使用 Ruby 的 [`mkmf` stdlib][mkmf] 可以帮助我们生成合适的 makefile。
 
-### Preparation ###
+### 准备 ###
 
-First create the file `extconf.rb` in the same directory as your C code:
+首先在你的 C 代码目录下创建 `extconf.rb` 文件：
 
 {% highlight ruby %}
 {% include extend/ext/extconf.rb %}
 {% endhighlight %}
 
-The preparation section should perform actions similar to the standard UNIX
-[`configure` script][conf] e.g.
+以上代码的执行类似标准 UNIX [`configure` script][conf] 里面的 actions 例如:
 
-* Check features of the current platform
-* Check for existence of required libraries and functions
-* Check for programs needed for building
+* 检查当前平台的特性
+* 检查需要的库和方法是否有效
+* 检查用于构建的程序是否有效
 
 [conf]: http://en.wikipedia.org/wiki/Configure_script
 
-The most common of these actions are provided by `mkmf` (but you have all of
-Ruby at your disposal if you need it). For example, an extension which uses SDL2
-and needs to know how big `int`s are might call:
+`mkmf` 已经提供了通用的 actions（but you have all of
+Ruby at your disposal if you need it）。举个例子，一个使用 SDL2 的 extension 需要知道 `int` 的位长，可以这么调用：
 
 {% highlight ruby %}
 {% include extend/ext/exex.rb %}
 {% endhighlight %}
 
-`create_header` creates the file `extconf.h` containing preprocessor definitions
-based on the results of the `mkmf` functions you called previously. For this
-example, `extconf.h` might contain
+`create_header` 根据你之前调用的 `mkmf` 方法结果来创建包含预处理定义 `extconf.h` 头文件。用刚才的例子来举例的话，`extconf.h` 大概是这样的
 
 {% highlight c %}
 {% include extend/ext/exh.h %}
 {% endhighlight %}
 
-This header should be included in your C files so that you can adapt your code
-to a variety of platforms. Note that you can and should abort the `extconf.rb`
-script if a `mkmf` function returns a value that indicates that the build will
-fail. For example, if SDL2 is a _requirement_ of your extension you should exit
-with some meaningful error message if `have_library('SDL2')` returns `false`.
-This is preferred to generating the Makefile anyway and leaving the user with an
-opaque compiler error.
+你应该在你的 C 代码里面包含此头文件，这样你的代码就可以适用于不同的平台。值得注意的地方是，如果 `mkmf` 方法返回一个暗示你的构建过程会失败的值，你可以并应该终止 `extconf.rb` 脚本。举个例子，如果 SDL2 是你的 extension 的必要条件，那么当 `have_library('SDL2')` 返回 `false` 的时候，你应该退出编译，然后提示错误。这样比依然生成 Makefile，留给用户迷惑的编译器错误好很多。
 
-`create_makefile` obviously creates the Makefile, but its argument is especially
-important: it defines the entry point of your C code, the name of the compiled
-library, and thus the argument for `require` in Ruby! This should be the name of
-your extension.
+`create_makefile` 明显是用于创建 Makefile 的，但是我们应该留意它的参数：它定义了你的 C 代码的入口，编译库的名字，还有用于 Ruby `require` 的参数！这个参数也应该是你的 extension 的名字。
 
-You can modify a few of the generated Makefile variables by modifying the
-corresponding globals in Ruby: `$CFLAGS`, `$CPPFLAGS`, and `$LDFLAGS`[^glob].
-You can also use the `$objs` global to define a list of object files for the
-Makefile if it's method of automatically generating targets doesn't work for
-your extension.
+你可以通过在 Ruby里面修改这些全局变量：`$CFLAGS`, `$CPPFLAGS`, and `$LDFLAGS`[^glob] 来修改生成的 Makefile 的对应变量。如果自动生成的目标文件不是你的 extension 需要的，你也可以用 `$objs` 这个全局变量来定义 Makefile 里面的 object files 列表。
 
-All of the `mkmf` functions and their options are well-documented
-[online][mkmf]. In addition to the functions for generating `extconf.h`, there
-are a variety of functions for handling different source file layouts, different
-file dependencies, etc.
+`mkmf` 的方法和选项都可以在文档 [online][mkmf] 里面找到。除了用来生成 `extconf.h` 的方法之外，文档还有一系列的方法用于处理不同的源文件（handling different source file layouts），不同的文件依赖，等等。
 
 [mkmf]: http://www.ruby-doc.org/stdlib/libdoc/mkmf/rdoc/MakeMakefile.html
 
-### Execution ###
+### 执行 ###
 
-The rest couldn't be simpler
+剩下的就简单到不能再简单了
 
     $ ruby extconf.rb
     $ make
 
-[^argv]But of course that won't do anything without some C code to compile.
+[^argv]当然现在不会发生什么，因为没有用于编译的 C 代码。
 
-## Init ##
+## 初始化 ##
 
-In your C code, you'll want to include `ruby.h` to access the API. Other than
-that the only requirement is to define a function for the Ruby VM to call when
-your library is `require`d. The name of the function is determined by the
-argument you passed to `create_makefile` in `extconf.rb`. We used "foobar" in
-our example, so we'll create `foobar.c` containing
+在你的 C 代码里面，你需要引入 `ruby.h` 来调用 API。除此之外，你只需要定义一个方法以便在 `require` 之后被 Ruby VM 调用。这个方法的方法名就是你在 `extconf.rb` 里面传给 `create_makefile` 的参数。我们在例子里面用的是 "foobar"，所以我们需要创建 `foobar.c`，它的代码如下：
 
 {% highlight c %}
 {% include extend/ext/foobar.c %}
 {% endhighlight %}
 
-### Filenames ###
+### 文件名 ###
 
-If your extension has only a single C file, you should name it after your
-extension as we did above. If your extensions has multiple C files _do not_ name
-any of them after your extension. This is because the Makefile may generate a
-`.o` file named after your extension for the linking stage, which would cause a
-conflict if you also have a `.c` file which compiles to that filename.
+如果你的 extension 只有一个 C 文件，那么你应该像上面那样来命名你的文件。但是如果你的 extension 有多个 C 文件，那么不要以你的 extionsion 来命名你的 C 文件。因为 Makefile 会在链接阶段用你的 extension 名来生成 `.o` 文件，如果你有一个 `.c` 文件也是这个名字的话，就会产生冲突。
 
-Also avoid naming any files `conftest.c` as this file may be written to by
-`mkmf`.
+也请不用以 `conftest.c` 来命名任何文件，因为此文件可能会被 `mkmf` 写入。
 
-## Success ##
+## 完成 ##
 
-Now make should compile a `.so` (or some other library) file which you can
-`require` in Ruby. You can fill in your `Init` function with plain C code, but
-you'll probably want to go back and learn about the [C API](../c) to do more
-interesting stuff.
+现在 make 可以编译出一个可以用来在 Ruby 里面 `require` 的 `.so` （或者其它库)文件了。你可以在你的 `Init` 方法里面写 C 代码了，不过你可能希望了解更多关于 [C API](../c) 的内容来完成更多有趣的东西。
 
 ## Gem ##
 
-After you've got your extension working nicely, you may want to bundle it up as
-an easily distributable Ruby gem. rubygems.org has a [detailed guide][rbg] on
-creating gems, but as far as C extensions go you just need to tell the spec
-about `extconf.rb`[^rbg]:
+等到你的 extension 可以很好地工作之后，你可能希望打包成一个 Ruby gem。rubygems.org 有关于创建 gems 的 [详细教程](rbg)，不过如果需要用到 C extensions 的话，你需要在 gem spec 里面加上以下关于 `extconf.rb` 的代码:
 
 {% highlight ruby %}
 {% include extend/foobar.gemspec %}
 {% endhighlight %}
 
-If your gem includes multiple independent extensions, you can organize them in
-subdirectories of `ext/` and pass all of the `extconf.rb`s to the spec.
+如果你的 gem 需要包含不同独立的 extensions，你可以在 `ext/` 下用不同的子目录来组织它们，然后在 gem spec 里面指明所有的 `extconf.rb`。
 
 [rbg]: http://guides.rubygems.org/make-your-own-gem/
 
